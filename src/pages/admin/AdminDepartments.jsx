@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../../context/AuthContext.jsx'
 import AdminLayout from '../../layouts/AdminLayout.jsx'
 
 const departmentsSeed = [
@@ -10,22 +11,37 @@ const departmentsSeed = [
 ]
 
 export default function AdminDepartments() {
+  const { token } = useAuth()
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
   const [query, setQuery] = useState('')
-  const [data, setData] = useState(() => {
-    try {
-      const raw = localStorage.getItem('adminDepartmentsData')
-      return raw ? JSON.parse(raw) : departmentsSeed
-    } catch {
-      return departmentsSeed
-    }
-  })
+  const [data, setData] = useState([])
   const [showModal, setShowModal] = useState(false)
+  const [editIndex, setEditIndex] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const perPage = 5
 
   useEffect(() => {
-    try { localStorage.setItem('adminDepartmentsData', JSON.stringify(data)) } catch {}
-  }, [data])
+    const fetchDepartments = async () => {
+      setLoading(true)
+      setError('')
+      try {
+        const res = await fetch(`${API_BASE}/api/departments`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.message || 'Failed to load departments')
+        setData(Array.isArray(json.departments) ? json.departments : [])
+      } catch (err) {
+        setError(err.message || 'Something went wrong')
+        setData(departmentsSeed)
+      } finally {
+        setLoading(false)
+      }
+    }
+    if (token) fetchDepartments()
+  }, [token])
 
   useEffect(() => { setCurrentPage(1) }, [query])
 
@@ -42,9 +58,24 @@ export default function AdminDepartments() {
   const start = (currentPage - 1) * perPage
   const pageData = filtered.slice(start, start + perPage)
 
-  const handleDelete = (name) => {
+  const handleDelete = async (id, name) => {
     if (!confirm(`Delete department "${name}"?`)) return
-    setData(prev => prev.filter(d => d.name !== name))
+    try {
+      const res = await fetch(`${API_BASE}/api/departments/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.message || 'Delete failed')
+      setData(prev => prev.filter(d => (d._id || d.id) !== id))
+    } catch (err) {
+      alert(err.message || 'Delete failed')
+    }
+  }
+
+  const handleEdit = (idx) => {
+    setEditIndex(idx)
+    setShowModal(true)
   }
 
   return (
@@ -83,13 +114,13 @@ export default function AdminDepartments() {
           </thead>
           <tbody className="text-gray-900">
             {pageData.map((d, i) => (
-              <tr key={i} className="border-t">
+              <tr key={d._id || i} className="border-t">
                 <td className="px-4 py-4 font-medium">{d.name}</td>
                 <td className="px-4 py-4 text-gray-700">{d.description}</td>
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-4">
-                    <button className="text-gray-700 hover:text-gray-900 text-sm">Edit</button>
-                    <button onClick={() => handleDelete(d.name)} className="text-red-600 hover:text-red-700 text-sm">Delete</button>
+                    <button onClick={() => handleEdit(start + i)} className="text-gray-700 hover:text-gray-900 text-sm">Edit</button>
+                    <button onClick={() => handleDelete(d._id || d.id, d.name)} className="text-red-600 hover:text-red-700 text-sm">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -136,10 +167,43 @@ export default function AdminDepartments() {
 
       {showModal && (
         <AddDepartmentModal
-          onCancel={() => setShowModal(false)}
-          onSubmit={(payload) => {
-            setData(prev => [...prev, payload])
-            setShowModal(false)
+          mode={editIndex === null ? 'add' : 'edit'}
+          initial={editIndex === null ? null : data[editIndex]}
+          onCancel={() => { setShowModal(false); setEditIndex(null) }}
+          onSubmit={async (payload) => {
+            try {
+              if (editIndex === null) {
+                const res = await fetch(`${API_BASE}/api/departments`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify(payload)
+                })
+                const json = await res.json()
+                if (!res.ok) throw new Error(json?.message || 'Create failed')
+                setData(prev => [...prev, json.department])
+              } else {
+                const target = data[editIndex]
+                const id = target._id || target.id
+                const res = await fetch(`${API_BASE}/api/departments/${id}`, {
+                  method: 'PATCH',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                  },
+                  body: JSON.stringify(payload)
+                })
+                const json = await res.json()
+                if (!res.ok) throw new Error(json?.message || 'Update failed')
+                setData(prev => prev.map((d, i) => (i === editIndex ? json.department : d)))
+              }
+              setShowModal(false)
+              setEditIndex(null)
+            } catch (err) {
+              alert(err.message || 'Operation failed')
+            }
           }}
         />
       )}
@@ -147,9 +211,9 @@ export default function AdminDepartments() {
   )
 }
 
-function AddDepartmentModal({ onCancel, onSubmit }) {
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
+function AddDepartmentModal({ mode = 'add', initial, onCancel, onSubmit }) {
+  const [name, setName] = useState(initial?.name || '')
+  const [description, setDescription] = useState(initial?.description || '')
   const canSubmit = name.trim() && description.trim()
 
   const handleSubmit = (e) => {
@@ -162,7 +226,7 @@ function AddDepartmentModal({ onCancel, onSubmit }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-xl border p-6">
-        <h3 className="text-xl font-semibold text-gray-900 mb-4">Add Department</h3>
+        <h3 className="text-xl font-semibold text-gray-900 mb-4">{mode === 'edit' ? 'Edit Department' : 'Add Department'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Department Name</label>
@@ -175,10 +239,10 @@ function AddDepartmentModal({ onCancel, onSubmit }) {
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
-              className={`px-4 py-2 rounded-md text-sm font-medium text-white ${canSubmit ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-300 cursor-not-allowed'}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium text-white ${canSubmit ? (mode === 'edit' ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-blue-600 hover:bg-blue-700') : 'bg-blue-300 cursor-not-allowed'}`}
               disabled={!canSubmit}
             >
-              Add Department
+              {mode === 'edit' ? 'Save Changes' : 'Add Department'}
             </button>
             <button type="button" onClick={onCancel} className="px-4 py-2 rounded-md text-sm font-medium bg-gray-100 hover:bg-gray-200 text-gray-800">Cancel</button>
           </div>

@@ -1,24 +1,86 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useAuth } from '../../context/AuthContext.jsx'
 import AdminLayout from '../../layouts/AdminLayout.jsx'
 
-const leavesSeed = [
-  { employee: 'Ethan Bennett', type: 'Sick Leave', start: '2024-07-10', end: '2024-07-12', status: 'Applied' },
-  { employee: 'Olivia Carter', type: 'Personal Leave', start: '2024-07-22', end: '2024-07-23', status: 'Pending' },
-  { employee: 'Sophia Clark', type: 'Vacation', start: '2024-07-15', end: '2024-07-20', status: 'Approved' },
-  { employee: 'Liam Harper', type: 'Vacation', start: '2024-08-05', end: '2024-08-10', status: 'Rejected' },
-  { employee: 'Ava Foster', type: 'Maternity Leave', start: '2024-09-01', end: '2024-12-01', status: 'Approved' },
-  { employee: 'Noah Carter', type: 'Sick Leave', start: '2024-10-03', end: '2024-10-05', status: 'Applied' },
-  { employee: 'Isabella Coleman', type: 'Vacation', start: '2024-11-10', end: '2024-11-18', status: 'Approved' },
-  { employee: 'Jackson Hayes', type: 'Personal Leave', start: '2024-07-29', end: '2024-07-30', status: 'Pending' },
-  { employee: 'Mia Jenkins', type: 'Sick Leave', start: '2024-08-18', end: '2024-08-19', status: 'Approved' },
-  { employee: 'Aiden Brooks', type: 'Vacation', start: '2024-09-12', end: '2024-09-16', status: 'Rejected' },
-]
-
 export default function AdminLeaves() {
+  const { token } = useAuth()
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
   const [query, setQuery] = useState('')
-  const [data] = useState(leavesSeed)
+  const [data, setData] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const perPage = 5
+  const [notifMsg, setNotifMsg] = useState('')
+  const [lastPending, setLastPending] = useState(0)
+
+  const load = async () => {
+    if (!token) return
+    try {
+      const res = await fetch(`${API_BASE}/api/leave-requests`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.message || 'Failed to load leave requests')
+      const rows = Array.isArray(data?.leaveRequests) ? data.leaveRequests : []
+      // Normalize to table format
+      setData(rows.map(r => ({
+        id: r.id || r._id,
+        employee: r.name,
+        type: r.type || 'General',
+        start: r.date,
+        end: r.date,
+        status: r.status || 'Pending',
+        reason: r.reason || '',
+      })))
+      // Track current pending count
+      const pendingCount = rows.filter(r => (r.status || 'Pending') === 'Pending').length
+      setLastPending(pendingCount)
+    } catch (err) {
+      console.warn(err.message || 'Failed to load leave requests')
+      setData([])
+    }
+  }
+
+  useEffect(() => { load() }, [token])
+
+  // Poll for new pending leave requests and notify when count increases
+  useEffect(() => {
+    if (!token) return
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/leave-requests?status=Pending`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const json = await res.json()
+        const pending = Array.isArray(json?.leaveRequests) ? json.leaveRequests.length : 0
+        if (pending > lastPending) {
+          const diff = pending - lastPending
+          setNotifMsg(`${diff} new leave request${diff > 1 ? 's' : ''} received.`)
+          setLastPending(pending)
+          // Refresh table data to reflect new items
+          await load()
+        }
+      } catch (err) {
+        // ignore polling errors
+      }
+    }, 10000) // 10s interval
+    return () => clearInterval(id)
+  }, [token, lastPending])
+
+  const act = async (id, action) => {
+    if (!token || !id) return
+    try {
+      const res = await fetch(`${API_BASE}/api/leave-requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.message || 'Failed to update leave request')
+      await load()
+    } catch (err) {
+      alert(err.message || 'Failed to update leave')
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -30,13 +92,36 @@ export default function AdminLeaves() {
     )
   }, [query, data])
 
+  const counts = useMemo(() => {
+    const c = { total: data.length, pending: 0, approved: 0, rejected: 0 }
+    for (const r of data) {
+      if (r.status === 'Pending') c.pending += 1
+      else if (r.status === 'Approved') c.approved += 1
+      else if (r.status === 'Rejected') c.rejected += 1
+    }
+    return c
+  }, [data])
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const start = (currentPage - 1) * perPage
   const pageData = filtered.slice(start, start + perPage)
 
   return (
     <AdminLayout>
-      <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-4">Leave Management</h1>
+      <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Leave Management</h1>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">Total: {counts.total}</span>
+        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-50 text-yellow-700 border border-yellow-200">Pending: {counts.pending}</span>
+        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-50 text-green-700 border border-green-200">Approved: {counts.approved}</span>
+        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-red-50 text-red-700 border border-red-200">Rejected: {counts.rejected}</span>
+      </div>
+
+      {notifMsg && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-indigo-800">
+          <span className="text-sm">{notifMsg}</span>
+          <button className="text-xs font-medium text-indigo-700 hover:underline" onClick={() => setNotifMsg('')}>Dismiss</button>
+        </div>
+      )}
 
       {/* Top bar: search */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3 mb-4">
@@ -62,6 +147,7 @@ export default function AdminLeaves() {
               <th className="px-4 py-3 text-left">Start Date</th>
               <th className="px-4 py-3 text-left">End Date</th>
               <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left">Reason</th>
               <th className="px-4 py-3 text-left">Action</th>
             </tr>
           </thead>
@@ -75,14 +161,22 @@ export default function AdminLeaves() {
                 <td className="px-4 py-4">
                   <StatusBadge status={l.status} />
                 </td>
+                <td className="px-4 py-4">{l.reason}</td>
                 <td className="px-4 py-4">
-                  <button className="text-indigo-600 hover:text-indigo-700 text-sm">View</button>
+                  {l.status === 'Pending' ? (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => act(l.id, 'approve')} className="px-3 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-xs">Approve</button>
+                      <button onClick={() => act(l.id, 'reject')} className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 text-white text-xs">Reject</button>
+                    </div>
+                  ) : (
+                    <span className="text-gray-500 text-sm">—</span>
+                  )}
                 </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td className="px-4 py-4 text-gray-500" colSpan={6}>No leaves found.</td>
+                <td className="px-4 py-4 text-gray-500" colSpan={7}>No leaves found.</td>
               </tr>
             )}
           </tbody>

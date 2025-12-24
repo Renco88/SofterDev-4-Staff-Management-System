@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import AppLayout from './AppLayout.jsx'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -10,16 +10,17 @@ import {
   ClipboardList,
   CalendarDays,
   CheckSquare,
-  Settings,
   LogOut,
   X,
 } from 'lucide-react'
 
 export default function UserLayout({ children }) {
-  const { logout } = useAuth()
+  const { logout, token } = useAuth()
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const [pendingTasks, setPendingTasks] = useState(0)
 
   const navItems = [
     { label: 'Overview', icon: Home, path: '/user/overview' },
@@ -28,8 +29,29 @@ export default function UserLayout({ children }) {
     { label: 'Tasks', icon: ClipboardList, path: '/user/tasks' },
     { label: 'Leave', icon: CalendarDays, path: '/user/leave' },
     { label: 'Attendance', icon: CheckSquare, path: '/user/attendance' },
-    { label: 'Settings', icon: Settings, path: '/user/settings' },
   ]
+
+  // Poll my pending tasks count
+  useEffect(() => {
+    if (!token) return
+    let stopped = false
+    const fetchCounts = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/tasks/me`, { headers: { Authorization: `Bearer ${token}` } })
+        const json = await res.json()
+        if (!stopped) {
+          const items = Array.isArray(json?.tasks) ? json.tasks : []
+          const pending = items.filter(t => t.status === 'Pending').length
+          setPendingTasks(pending)
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+    fetchCounts()
+    const id = setInterval(fetchCounts, 10000)
+    return () => { stopped = true; clearInterval(id) }
+  }, [token])
 
   const isActive = (path) => location.pathname === path
 
@@ -70,6 +92,11 @@ export default function UserLayout({ children }) {
                   >
                     <Icon className="h-5 w-5 text-gray-500" />
                     <span className="text-sm">{label}</span>
+                    {path === '/user/tasks' && pendingTasks > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center rounded-full bg-yellow-500 text-white text-[10px] h-5 min-w-[20px] px-1">
+                        {pendingTasks}
+                      </span>
+                    )}
                   </button>
                 ))}
               </nav>
@@ -86,7 +113,7 @@ export default function UserLayout({ children }) {
           </aside>
 
           {/* Main Content */}
-          <section>{children}</section>
+          <section className="min-w-0">{children}</section>
         </div>
       </div>
 
@@ -119,6 +146,11 @@ export default function UserLayout({ children }) {
                 >
                   <Icon className="h-5 w-5 text-gray-500" />
                   <span className="text-sm">{label}</span>
+                  {path === '/user/tasks' && pendingTasks > 0 && (
+                    <span className="ml-auto inline-flex items-center justify-center rounded-full bg-yellow-500 text-white text-[10px] h-5 min-w-[20px] px-1">
+                      {pendingTasks}
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>

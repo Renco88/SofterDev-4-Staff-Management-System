@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import AppLayout from './AppLayout.jsx'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -10,16 +10,19 @@ import {
   Wallet,
   CalendarDays,
   CheckSquare,
-  Settings,
   LogOut,
   X,
+  ClipboardList,
 } from 'lucide-react'
 
 export default function AdminLayout({ children }) {
-  const { logout } = useAuth()
+  const { logout, token } = useAuth()
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000'
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
+  const [pendingLeaves, setPendingLeaves] = useState(0)
+  const [pendingTasks, setPendingTasks] = useState(0)
 
   const navItems = [
     { label: 'Overview', icon: Home, path: '/admin/overview' },
@@ -27,9 +30,50 @@ export default function AdminLayout({ children }) {
     { label: 'Departments', icon: Building2, path: '/admin/departments' },
     { label: 'Salary', icon: Wallet, path: '/admin/salary' },
     { label: 'Attendance', icon: CheckSquare, path: '/admin/attendance' },
+    { label: 'Tasks', icon: ClipboardList, path: '/admin/tasks' },
     { label: 'Leaves', icon: CalendarDays, path: '/admin/leaves' },
-    { label: 'Settings', icon: Settings, path: '/admin/settings' },
   ]
+
+  // Poll pending leave requests count
+  useEffect(() => {
+    if (!token) return
+    let stopped = false
+    const fetchPending = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/leave-requests?status=Pending`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const json = await res.json()
+        if (!stopped) {
+          const count = Array.isArray(json?.leaveRequests) ? json.leaveRequests.length : 0
+          setPendingLeaves(count)
+        }
+      } catch (_) {
+        // ignore
+      }
+    }
+    fetchPending()
+    const id = setInterval(fetchPending, 10000)
+    return () => { stopped = true; clearInterval(id) }
+  }, [token])
+
+  // Poll tasks counts (pending only)
+  useEffect(() => {
+    if (!token) return
+    let stopped = false
+    const fetchCounts = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/tasks?status=Pending`, { headers: { Authorization: `Bearer ${token}` } })
+        const json = await res.json()
+        if (!stopped) setPendingTasks(Array.isArray(json?.tasks) ? json.tasks.length : 0)
+      } catch (_) {
+        // ignore
+      }
+    }
+    fetchCounts()
+    const id = setInterval(fetchCounts, 10000)
+    return () => { stopped = true; clearInterval(id) }
+  }, [token])
 
   const isActive = (path) => location.pathname === path
 
@@ -70,6 +114,16 @@ export default function AdminLayout({ children }) {
                   >
                     <Icon className="h-5 w-5 text-gray-500" />
                     <span className="text-sm">{label}</span>
+                    {path === '/admin/tasks' && pendingTasks > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center rounded-full bg-yellow-500 text-white text-[10px] h-5 min-w-[20px] px-1">
+                        {pendingTasks}
+                      </span>
+                    )}
+                    {path === '/admin/leaves' && pendingLeaves > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] h-5 min-w-[20px] px-1">
+                        {pendingLeaves}
+                      </span>
+                    )}
                   </button>
                 ))}
               </nav>
@@ -86,7 +140,7 @@ export default function AdminLayout({ children }) {
           </aside>
 
           {/* Main Content */}
-          <section>{children}</section>
+          <section className="min-w-0">{children}</section>
         </div>
       </div>
 
@@ -119,6 +173,16 @@ export default function AdminLayout({ children }) {
                 >
                   <Icon className="h-5 w-5 text-gray-500" />
                   <span className="text-sm">{label}</span>
+                  {path === '/admin/tasks' && pendingTasks > 0 && (
+                    <span className="ml-auto inline-flex items-center justify-center rounded-full bg-yellow-500 text-white text-[10px] h-5 min-w-[20px] px-1">
+                      {pendingTasks}
+                    </span>
+                  )}
+                  {path === '/admin/leaves' && pendingLeaves > 0 && (
+                    <span className="ml-auto inline-flex items-center justify-center rounded-full bg-red-600 text-white text-[10px] h-5 min-w-[20px] px-1">
+                      {pendingLeaves}
+                    </span>
+                  )}
                 </button>
               ))}
             </nav>

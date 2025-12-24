@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Login from './pages/Login.jsx'
-import AdminDashboard from './pages/AdminDashboard.jsx'
-import UserDashboard from './pages/UserDashboard.jsx'
+import Home from './pages/Home.jsx'
 // Admin subpages
 import AdminOverview from './pages/admin/AdminOverview.jsx'
 import AdminEmployees from './pages/admin/AdminEmployees.jsx'
@@ -9,6 +8,7 @@ import AdminDepartments from './pages/admin/AdminDepartments.jsx'
 import AdminSalary from './pages/admin/AdminSalary.jsx'
 import AdminAttendance from './pages/admin/AdminAttendance.jsx'
 import AdminLeaves from './pages/admin/AdminLeaves.jsx'
+import AdminTasks from './pages/admin/AdminTasks.jsx'
 import AdminSettings from './pages/admin/AdminSettings.jsx'
 // User subpages
 import UserOverview from './pages/user/UserOverview.jsx'
@@ -23,12 +23,13 @@ import ProtectedRoute from './components/ProtectedRoute.jsx'
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Login />} />
+      <Route path="/" element={<Home />} />
+      <Route path="/login" element={<Login />} />
       <Route
         path="/admin"
         element={
           <ProtectedRoute requiredRole="admin">
-            <AdminDashboard />
+            <AdminOverview />
           </ProtectedRoute>
         }
       />
@@ -82,6 +83,14 @@ function App() {
         }
       />
       <Route
+        path="/admin/tasks"
+        element={
+          <ProtectedRoute requiredRole="admin">
+            <AdminTasks />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/settings"
         element={
           <ProtectedRoute requiredRole="admin">
@@ -93,7 +102,7 @@ function App() {
         path="/user"
         element={
           <ProtectedRoute requiredRole="user">
-            <UserDashboard />
+            <UserOverview />
           </ProtectedRoute>
         }
       />

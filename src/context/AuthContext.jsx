@@ -4,41 +4,47 @@ import { useNavigate } from 'react-router-dom'
 const AuthContext = createContext(null)
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const initial = (() => {
+    try {
+      const saved = localStorage.getItem('auth_state')
+      return saved ? JSON.parse(saved) : null
+    } catch {
+      return null
+    }
+  })()
+
+  const [user, setUser] = useState(initial?.user || null)
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(initial?.isAuthenticated))
+  const [token, setToken] = useState(initial?.token || null)
   const navigate = useNavigate()
 
-  useEffect(() => {
-    const saved = localStorage.getItem('auth_state')
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      setUser(parsed.user)
-      setIsAuthenticated(parsed.isAuthenticated)
-    }
-  }, [])
+  // initial state already derived from localStorage synchronously
 
   useEffect(() => {
     localStorage.setItem(
       'auth_state',
-      JSON.stringify({ user, isAuthenticated })
+      JSON.stringify({ user, isAuthenticated, token })
     )
-  }, [user, isAuthenticated])
+  }, [user, isAuthenticated, token])
 
-  const login = ({ name, role }) => {
-    setUser({ name, role })
+  const login = ({ user: nextUser, token: nextToken }) => {
+    setUser(nextUser)
+    setToken(nextToken)
     setIsAuthenticated(true)
-    if (role === 'admin') navigate('/admin')
-    else navigate('/user')
+    if (nextUser?.role === 'admin') navigate('/admin/overview')
+    else navigate('/user/overview')
   }
 
   const logout = () => {
     setUser(null)
     setIsAuthenticated(false)
+    setToken(null)
+    try { localStorage.removeItem('auth_token') } catch {}
     navigate('/')
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

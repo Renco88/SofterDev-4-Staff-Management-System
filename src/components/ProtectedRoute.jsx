@@ -5,12 +5,12 @@ const ProtectedRoute = ({ children, requiredRole }) => {
   const { isAuthenticated, user } = useAuth()
 
   if (!isAuthenticated) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/login" replace />
   }
 
   if (requiredRole && user?.role !== requiredRole) {
     // If role mismatch, redirect to the user's own dashboard
-    const target = user?.role === 'admin' ? '/admin' : '/user'
+    const target = user?.role === 'admin' ? '/admin/overview' : '/user/overview'
     return <Navigate to={target} replace />
   }
 

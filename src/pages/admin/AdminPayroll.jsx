@@ -8,7 +8,7 @@ export default function AdminPayroll() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border rounded-xl p-6 shadow-sm">
           <p className="text-sm text-gray-600">Monthly Pay</p>
-          <h2 className="text-xl font-bold mt-2">$750,000</h2>
+          <h2 className="text-xl font-bold mt-2">BDT 750,000</h2>
         </div>
         <div className="bg-white border rounded-xl p-6 shadow-sm">
           <p className="text-sm text-gray-600">Pending Approvals</p>
